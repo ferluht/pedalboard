@@ -59,7 +59,7 @@ public:
   }
 
   void process(
-      const juce::dsp::ProcessContextReplacing<float> &context) override final {
+      const juce::dsp::ProcessContextReplacing<float> &context, juce::MidiBuffer * mBuffer = nullptr) override final {
     dspBlock.process(context);
   }
 

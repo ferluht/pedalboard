@@ -23,6 +23,8 @@
 
 #include "Plugin.h"
 
+#include "midi.h"
+
 namespace py = pybind11;
 
 namespace Pedalboard {
@@ -38,10 +40,12 @@ template <typename SampleType>
 py::array_t<float>
 process(const py::array_t<SampleType, py::array::c_style> inputArray,
         double sampleRate, const std::vector<Plugin *> &plugins,
-        unsigned int bufferSize, bool reset) {
+        unsigned int bufferSize, bool reset,
+        std::optional<py::array_t<float, py::array::c_style>> midiArray) {
   const py::array_t<float, py::array::c_style> float32InputArray =
       inputArray.attr("astype")("float32");
-  return process(float32InputArray, sampleRate, plugins, bufferSize, reset);
+  return process(float32InputArray, sampleRate, plugins, bufferSize, 
+                 reset, midiArray);
 }
 
 /**
@@ -51,10 +55,11 @@ template <typename SampleType>
 py::array_t<float>
 processSingle(const py::array_t<SampleType, py::array::c_style> inputArray,
               double sampleRate, Plugin &plugin, unsigned int bufferSize,
-              bool reset) {
+              bool reset,
+              std::optional<py::array_t<float, py::array::c_style>> midiArray) {
   std::vector<Plugin *> plugins{&plugin};
   return process<SampleType>(inputArray, sampleRate, plugins, bufferSize,
-                             reset);
+                             reset, midiArray);
 }
 
 /**
@@ -66,7 +71,8 @@ template <>
 py::array_t<float>
 process<float>(const py::array_t<float, py::array::c_style> inputArray,
                double sampleRate, const std::vector<Plugin *> &plugins,
-               unsigned int bufferSize, bool reset) {
+               unsigned int bufferSize, bool reset,
+               std::optional<py::array_t<float, py::array::c_style>> midiArray) {
   // Numpy/Librosa convention is (num_samples, num_channels)
   py::buffer_info inputInfo = inputArray.request();
 
@@ -188,6 +194,25 @@ process<float>(const py::array_t<float, py::array::c_style> inputArray,
                                        static_cast<unsigned int>(numSamples));
       unsigned int blockSize = blockEnd - blockStart;
 
+      juce::MidiBuffer * midiBuffer = nullptr;
+
+      // Fill midi buffer
+      if (midiArray.has_value()) {
+        py::buffer_info midiInfo = midiArray.value().request();
+        if (midiInfo.shape[1] != 4) {
+          throw std::runtime_error(
+              "2nd dimension of midi array should be 4 (status, data1, data2, time)!");
+        }
+        
+        midiBuffer = new juce::MidiBuffer;
+        unsigned int numCommands = midiInfo.shape[0];
+        float *mPtr = (float *) midiInfo.ptr;
+
+        for (unsigned int i = 0; i < numCommands; i ++)
+          if ((mPtr[4*i+3] > blockStart) && (mPtr[4*i+3] < blockEnd))
+            addMidiToBuffer(mPtr[4*i+0], mPtr[4*i+1], mPtr[4*i+2], mPtr[4*i+3] - blockStart, *midiBuffer);
+      }
+
       // Copy the input audio into the ioBuffer, which will be used for
       // processing and will be returned.
 
@@ -223,7 +248,7 @@ process<float>(const py::array_t<float, py::array::c_style> inputArray,
       for (auto *plugin : plugins) {
         if (plugin == nullptr)
           continue;
-        plugin->process(context);
+        plugin->process(context, midiBuffer);
       }
     }
   }

@@ -531,7 +531,7 @@ public:
   }
 
   void
-  process(const juce::dsp::ProcessContextReplacing<float> &context) override {
+  process(const juce::dsp::ProcessContextReplacing<float> &context, juce::MidiBuffer * mBuffer = nullptr) override {
 
     if (pluginInstance) {
       juce::MidiBuffer emptyMidiBuffer;
@@ -600,7 +600,8 @@ public:
       juce::AudioBuffer<float> audioBuffer(channelPointers.data(),
                                            pluginBufferChannelCount,
                                            outputBlock.getNumSamples());
-      pluginInstance->processBlock(audioBuffer, emptyMidiBuffer);
+      if (mBuffer) pluginInstance->processBlock(audioBuffer, *mBuffer);
+      else pluginInstance->processBlock(audioBuffer, emptyMidiBuffer);
     }
   }
 
